@@ -1,0 +1,1 @@
+uv run --package user fastapi dev services/user/main.py --port 8001
