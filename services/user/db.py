@@ -1,13 +1,9 @@
+import os
 from sqlmodel import create_engine, Session
-from pathlib import Path
 
+DATABASE_URL = os.getenv("DATABASE_URL")
 
-DB_DIR = Path(__file__).resolve().parent
-DB_PATH = DB_DIR / "database.db"
-
-engine = create_engine(
-    f"sqlite:///{DB_PATH}", connect_args={"check_same_thread": False}
-)
+engine = create_engine(DATABASE_URL)
 
 
 def get_session():
