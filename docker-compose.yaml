@@ -24,9 +24,9 @@ services:
       context: .
       dockerfile: services/user/Dockerfile
     ports:
-      - "8001:8001"
+      - "50052:50052"
     environment:
-      - DATABASE_URL=postgresql+psycopg://postgres:password@db:5432/user_db
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/rarita
     depends_on:
       - db
 
@@ -34,8 +34,8 @@ services:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: user_db
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: rarita
     ports:
       - "5432:5432"
     volumes:
