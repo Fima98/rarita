@@ -4,27 +4,70 @@ import "google/protobuf/struct.proto";
 package product;
 
 message CategoryResponse {
-  int32 id = 1;
+  string id = 1;
   string name = 2;
   string slug = 3;
 }
 
+message CreateCategoryRequest {
+  string name = 1;
+}
+
+message ProductVariant {
+  string variant_id = 1;
+  string sku = 2;
+  string color_name = 3;
+  string color_hex = 4;
+  double price = 5;
+  int32 stock = 6;
+  repeated string images = 7;
+}
+
 message ProductRequest {
-  int32 id = 1;
+  string id = 1;
 }
 
 message ProductResponse {
-  int32 id = 1;
+  string id = 1;
   string name = 2;
   string description = 3;
-  float price = 4;
+  string category_id = 4;
+  string category_name = 5;
+  google.protobuf.Struct attributes = 6;
+  repeated ProductVariant variants = 7;
+}
+
+message ListProductsRequest {
+  int32 limit = 1;
+  int32 offset = 2;
+  optional string category_id = 3;
+}
+
+message ListProductsResponse {
+  repeated ProductResponse products = 1;
+}
+
+message CreateProductVariantInput {
+  string sku = 1;
+  string color_name = 2;
+  string color_hex = 3;
+  double price = 4;
   int32 stock = 5;
-  int32 category_id = 6;
-  string category_name = 7;
-  google.protobuf.Struct attributes = 8;
+  repeated string images = 6;
+}
+
+message CreateProductRequest {
+  string name = 1;
+  string description = 2;
+  string category_id = 3;
+  google.protobuf.Struct attributes = 4;
+  repeated CreateProductVariantInput variants = 5;
 }
 
 service ProductService {
     rpc GetProduct(ProductRequest) returns (ProductResponse);
+    rpc ListProducts(ListProductsRequest) returns (ListProductsResponse);
+    rpc CreateProduct(CreateProductRequest) returns (ProductResponse);
+    rpc CreateCategory(CreateCategoryRequest) returns (CategoryResponse);
 }
 

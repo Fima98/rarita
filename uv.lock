@@ -634,12 +634,16 @@ source = { virtual = "services/product" }
 dependencies = [
     { name = "grpcio" },
     { name = "grpcio-tools" },
+    { name = "psycopg2-binary" },
+    { name = "sqlmodel" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "grpcio", specifier = ">=1.83.1" },
     { name = "grpcio-tools", specifier = ">=1.83.1" },
+    { name = "psycopg2-binary", specifier = ">=2.9.12" },
+    { name = "sqlmodel", specifier = ">=0.0.39" },
 ]
 
 [[package]]
