@@ -19,4 +19,9 @@ build-backend = "uv_build"
 [tool.uv.workspace]
 members = [
     "services/user",
+    "services/product",
+    "services/gateway",
 ]
+
+[tool.uv]
+package = false
