@@ -1,4 +1,24 @@
 services:
+  gateway:
+    build:
+      context: .
+      dockerfile: services/gateway/Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - PRODUCT_SERVICE_HOST=product:50051
+      - USER_SERVICE_HOST=user:50052
+    depends_on:
+      - product
+      - user
+
+  product:
+    build:
+      context: .
+      dockerfile: services/product/Dockerfile
+    ports:
+      - "50051:50051"
+
   user:
     build:
       context: .
