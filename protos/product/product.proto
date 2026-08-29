@@ -1,0 +1,30 @@
+syntax = "proto3";
+import "google/protobuf/struct.proto";
+
+package product;
+
+message CategoryResponse {
+  int32 id = 1;
+  string name = 2;
+  string slug = 3;
+}
+
+message ProductRequest {
+  int32 id = 1;
+}
+
+message ProductResponse {
+  int32 id = 1;
+  string name = 2;
+  string description = 3;
+  float price = 4;
+  int32 stock = 5;
+  int32 category_id = 6;
+  string category_name = 7;
+  google.protobuf.Struct attributes = 8;
+}
+
+service ProductService {
+    rpc GetProduct(ProductRequest) returns (ProductResponse);
+}
+
