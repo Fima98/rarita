@@ -66,26 +66,47 @@ class ProductService(product_pb2_grpc.ProductServiceServicer):
             )
 
     def GetProduct(self, request, context):
-        attrs = Struct()
-        attrs.update({
-            "color": "silver",
-            "battery_type": "AA",
-            "has_remote": True
-        })
+        try:
+            product_uuid = uuid.UUID(request.id)
+        except ValueError:
+            context.abort(
+                grpc.StatusCode.INVALID_ARGUMENT,
+                "Invalid product ID format"
+            )
 
-        return product_pb2.ProductResponse(
-            id=request.id,
-            name="Sony Walkman WM EX-655",
-            description="Vintage cassette player with remote",
-            price=150.0,
-            stock=1,
-            category_id=10,
-            category_name="Audio",
-            attributes=attrs
-        )
+        with next(get_session()) as session:
+            product = session.get(Product, product_uuid)
+            if not product:
+                context.abort(
+                    grpc.StatusCode.NOT_FOUND,
+                    "Product not found"
+                )
+
+            return db_to_proto(product)
 
     def ListProducts(self, request, context):
-        pass
+        limit = request.limit if request.limit > 0 else 100
+        offset = request.offset if request.offset >= 0 else 0
+
+        with next(get_session()) as session:
+            statement = select(Product)
+
+            if request.HasField("category_id") and request.category_id:
+                try:
+                    cat_uuid = uuid.UUID(request.category_id)
+                    statement = statement.where(
+                        Product.category_id == cat_uuid)
+                except ValueError:
+                    context.abort(
+                        grpc.StatusCode.INVALID_ARGUMENT,
+                        "Invalid category_id UUID format"
+                    )
+
+            statement = statement.offset(offset).limit(limit)
+            products = session.exec(statement).all()
+
+            proto_products = [db_to_proto(p) for p in products]
+            return product_pb2.ListProductsResponse(products=proto_products)
 
     def CreateProduct(self, request, context):
         if not request.name.strip():

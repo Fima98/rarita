@@ -31,20 +31,6 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="API Gateway", lifespan=lifespan)
 
 
-@app.get("/products/{product_id}")
-def get_product(product_id: str, request: Request):
-    try:
-        grpc_req = product_pb2.ProductRequest(id=product_id)
-        response = request.app.state.product.GetProduct(grpc_req)
-        return MessageToDict(response, preserving_proto_field_name=True)
-    except grpc.RpcError as e:
-        if e.code() == grpc.StatusCode.NOT_FOUND:
-            raise HTTPException(status_code=404, detail="Product not found")
-        raise HTTPException(
-            status_code=500, detail=f"gRPC service error: {e.details()}"
-        )
-
-
 @app.post("/users/", status_code=status.HTTP_201_CREATED)
 def create_user(user: UserCreate, request: Request):
     try:
@@ -134,6 +120,44 @@ def create_product(payload: ProductCreateSchema, request: Request):
         grpc_response,
         preserving_proto_field_name=True
     )
+
+
+@app.get("/products/{product_id}")
+def get_product(product_id: str, request: Request):
+    try:
+        grpc_req = product_pb2.ProductRequest(id=product_id)
+        response = request.app.state.product.GetProduct(grpc_req)
+        return MessageToDict(response, preserving_proto_field_name=True)
+    except grpc.RpcError as e:
+        if e.code() == grpc.StatusCode.NOT_FOUND:
+            raise HTTPException(status_code=404, detail="Product not found")
+        raise HTTPException(
+            status_code=500, detail=f"gRPC service error: {e.details()}"
+        )
+
+
+@app.get("/products/")
+def list_products(
+    request: Request,
+    limit: int = 10,
+    offset: int = 0,
+    category_id: str | None = None
+):
+    try:
+        grpc_req = product_pb2.ListProductsRequest(
+            limit=limit,
+            offset=offset,
+            category_id=category_id if category_id else None
+        )
+        response = request.app.state.product.ListProducts(grpc_req)
+        result = MessageToDict(response, preserving_proto_field_name=True)
+        return result.get("products", [])
+    except grpc.RpcError as e:
+        if e.code() == grpc.StatusCode.INVALID_ARGUMENT:
+            raise HTTPException(status_code=400, detail=e.details())
+        raise HTTPException(
+            status_code=500, detail=f"gRPC service error: {e.details()}"
+        )
 
 
 @app.post("/categories/", status_code=status.HTTP_201_CREATED)
