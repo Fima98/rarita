@@ -1,13 +1,30 @@
 services:
+  traefik:
+    image: traefik:v3.0
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+    ports:
+      - "80:80"
+      - "8080:8080"
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+
   gateway:
     build:
       context: .
       dockerfile: services/gateway/Dockerfile
-    ports:
-      - "8000:8000"
     environment:
       - PRODUCT_SERVICE_HOST=product:50051
       - USER_SERVICE_HOST=user:50052
+      - INTERNAL_API_SECRET=${INTERNAL_API_SECRET}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.gateway.rule=PathPrefix(`/`)"
+      - "traefik.http.routers.gateway.entrypoints=web"
+      - "traefik.http.services.gateway.loadbalancer.server.port=8000"
     depends_on:
       - product
       - user
@@ -16,34 +33,38 @@ services:
     build:
       context: .
       dockerfile: services/product/Dockerfile
-    ports:
-      - "50051:50051"
     environment:
-      - DATABASE_URL=postgresql://postgres:postgres@db:5432/rarita
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db_product:5432/${PRODUCT_DB_NAME}
     depends_on:
-      - db
+      - db_product
 
   user:
     build:
       context: .
       dockerfile: services/user/Dockerfile
-    ports:
-      - "50052:50052"
     environment:
-      - DATABASE_URL=postgresql://postgres:postgres@db:5432/rarita
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db_user:5432/${USER_DB_NAME}
     depends_on:
-      - db
+      - db_user
 
-  db:
+  db_product:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: rarita
-    ports:
-      - "5432:5432"
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${PRODUCT_DB_NAME}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_product_data:/var/lib/postgresql/data
+
+  db_user:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${USER_DB_NAME}
+    volumes:
+      - postgres_user_data:/var/lib/postgresql/data
 
 volumes:
-  postgres_data:
+  postgres_product_data:
+  postgres_user_data:

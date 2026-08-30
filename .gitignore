@@ -10,3 +10,4 @@ wheels/
 .venv
 
 *_pb2*.py
+.env

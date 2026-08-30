@@ -1,13 +1,15 @@
 from contextlib import asynccontextmanager
 import os
 import grpc
-from fastapi import FastAPI, HTTPException, Request, status
+from fastapi import FastAPI, HTTPException, Request, status, Depends
 from google.protobuf.json_format import MessageToDict
 from google.protobuf.struct_pb2 import Struct
 
 from product import product_pb2, product_pb2_grpc
 from schema import ProductCreateSchema, UserCreate, CategoryCreateSchema
 from user import user_pb2, user_pb2_grpc
+from fastapi.responses import JSONResponse
+from fastapi.security import APIKeyHeader
 
 
 @asynccontextmanager
@@ -27,8 +29,23 @@ async def lifespan(app: FastAPI):
     product_channel.close()
     user_channel.close()
 
+api_key_header = APIKeyHeader(name="X-Internal-Secret", auto_error=False)
+app = FastAPI(title="API Gateway", lifespan=lifespan,
+              dependencies=[Depends(api_key_header)])
 
-app = FastAPI(title="API Gateway", lifespan=lifespan)
+EXCLUDED_PATHS = {"/docs", "/redoc", "/openapi.json"}
+
+
+@app.middleware("http")
+async def verify_internal_secret(request: Request, call_next):
+    if request.url.path in EXCLUDED_PATHS:
+        return await call_next(request)
+
+    client_secret = request.headers.get("X-Internal-Secret")
+    if client_secret != os.getenv("INTERNAL_API_SECRET"):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden"})
+
+    return await call_next(request)
 
 
 @app.post("/users/", status_code=status.HTTP_201_CREATED)
