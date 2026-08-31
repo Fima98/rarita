@@ -7,6 +7,7 @@ from db import engine, get_session
 from sqlmodel import SQLModel, select
 from models import Product, Category, ProductVariant
 import uuid
+from google.protobuf.json_format import MessageToDict
 
 
 def generate_slug(text: str) -> str:
@@ -144,11 +145,13 @@ class ProductService(product_pb2_grpc.ProductServiceServicer):
                 for v in request.variants
             ]
 
+            attributes_dict = MessageToDict(request.attributes)
+
             db_product = Product(
                 name=request.name,
                 description=request.description,
                 category_id=uuid.UUID(request.category_id),
-                attributes=dict(request.attributes),
+                attributes=attributes_dict,
                 variants=variants
             )
 
