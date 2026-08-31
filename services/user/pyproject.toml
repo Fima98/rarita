@@ -9,11 +9,10 @@ authors = [
 requires-python = ">=3.12"
 dependencies = [
     "email-validator>=2.3.0",
-    "fastapi[standard]>=0.141.1",
     "grpcio>=1.83.1",
     "grpcio-tools>=1.83.1",
     "psycopg2-binary>=2.9.12",
-    "psycopg[binary]>=3.3.4",
+    "pyjwt>=2.13.0",
     "sqlmodel>=0.0.39",
 ]
 

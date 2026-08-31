@@ -23,6 +23,6 @@ WORKDIR /app
 COPY --from=builder /app /app
 
 ENV PATH="/app/.venv/bin:$PATH"
-ENV PYTHONPATH="/app/services/gateway"
+ENV PYTHONPATH="/app:/app/services/gateway:/app/services/gateway/user:/app/services/gateway/product"
 
 CMD ["uvicorn", "services.gateway.main:app", "--host", "0.0.0.0", "--port", "8000"]

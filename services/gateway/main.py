@@ -6,10 +6,11 @@ from google.protobuf.json_format import MessageToDict
 from google.protobuf.struct_pb2 import Struct
 
 from product import product_pb2, product_pb2_grpc
-from schema import ProductCreateSchema, UserCreate, CategoryCreateSchema
+from schema import ProductCreateSchema, UserCreate, CategoryCreateSchema, LoginSchema
 from user import user_pb2, user_pb2_grpc
 from fastapi.responses import JSONResponse
 from fastapi.security import APIKeyHeader
+from auth import get_current_user_id
 
 
 @asynccontextmanager
@@ -48,7 +49,7 @@ async def verify_internal_secret(request: Request, call_next):
     return await call_next(request)
 
 
-@app.post("/users/", status_code=status.HTTP_201_CREATED)
+@app.post("/signup/", status_code=status.HTTP_201_CREATED)
 def create_user(user: UserCreate, request: Request):
     try:
         response = request.app.state.user_stub.CreateUser(
@@ -60,6 +61,25 @@ def create_user(user: UserCreate, request: Request):
         )
         return {"id": response.id, "name": response.name, "email": response.email}
     except grpc.RpcError as e:
+        raise HTTPException(status_code=500, detail=e.details())
+
+
+@app.post("/login/")
+def login(payload: LoginSchema, request: Request):
+    try:
+        response = request.app.state.user_stub.LoginUser(
+            user_pb2.LoginRequest(
+                email=payload.email,
+                password=payload.password
+            )
+        )
+        return {
+            "access_token": response.access_token,
+            "token_type": response.token_type
+        }
+    except grpc.RpcError as e:
+        if e.code() == grpc.StatusCode.UNAUTHENTICATED:
+            raise HTTPException(status_code=401, detail=e.details())
         raise HTTPException(status_code=500, detail=e.details())
 
 
@@ -100,7 +120,11 @@ def get_user(user_id: str, request: Request):
 
 
 @app.post("/products/", status_code=status.HTTP_201_CREATED)
-def create_product(payload: ProductCreateSchema, request: Request):
+def create_product(
+    payload: ProductCreateSchema,
+    request: Request,
+    _: str = Depends(get_current_user_id)
+):
     attrs_struct = Struct()
     attrs_struct.update(payload.attributes)
 

@@ -23,6 +23,5 @@ WORKDIR /app
 COPY --from=builder /app /app
 
 ENV PATH="/app/.venv/bin:$PATH"
-ENV PYTHONPATH="/app/services/user"
 
 CMD ["python", "services/user/main.py"]

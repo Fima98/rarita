@@ -9,6 +9,11 @@ class UserCreate(BaseModel):
     password: str
 
 
+class LoginSchema(BaseModel):
+    email: EmailStr
+    password: str
+
+
 class CategoryCreateSchema(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
 

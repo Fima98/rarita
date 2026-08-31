@@ -6,6 +6,11 @@ from db import engine, get_session
 from models import User
 from user import user_pb2, user_pb2_grpc
 import uuid
+import os
+import jwt
+
+SECRET_KEY = os.getenv("JWT_SECRET_KEY", "secret-key")
+ALGORITHM = "HS256"
 
 
 class UserServiceServicer(user_pb2_grpc.UserServiceServicer):
@@ -24,6 +29,25 @@ class UserServiceServicer(user_pb2_grpc.UserServiceServicer):
                 id=str(db_user.id),
                 name=db_user.name,
                 email=db_user.email,
+            )
+
+    def LoginUser(self, request, context):
+        with next(get_session()) as session:
+            statement = select(User).where(User.email == request.email)
+            user = session.exec(statement).first()
+
+            if not user or user.password != request.password:
+                context.abort(
+                    grpc.StatusCode.UNAUTHENTICATED,
+                    "Invalid email or password"
+                )
+
+            payload = {"sub": str(user.id)}
+            token = jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+            return user_pb2.LoginResponse(
+                access_token=token,
+                token_type="bearer"
             )
 
     def GetUsers(self, request, context):
