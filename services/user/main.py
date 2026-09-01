@@ -8,18 +8,23 @@ from user import user_pb2, user_pb2_grpc
 import uuid
 import os
 import jwt
+from pwdlib import PasswordHash
+from datetime import datetime, timedelta, timezone
 
 SECRET_KEY = os.getenv("JWT_SECRET_KEY", "secret-key")
 ALGORITHM = "HS256"
+
+password_hash = PasswordHash.recommended()
 
 
 class UserServiceServicer(user_pb2_grpc.UserServiceServicer):
     def CreateUser(self, request, context):
         with next(get_session()) as session:
+            hashed_pwd = password_hash.hash(request.password)
             db_user = User(
                 name=request.name,
                 email=request.email,
-                password=request.password,
+                password=hashed_pwd,
             )
             session.add(db_user)
             session.commit()
@@ -36,13 +41,17 @@ class UserServiceServicer(user_pb2_grpc.UserServiceServicer):
             statement = select(User).where(User.email == request.email)
             user = session.exec(statement).first()
 
-            if not user or user.password != request.password:
+            if not user or not password_hash.verify(request.password,
+                                                    user.password):
                 context.abort(
                     grpc.StatusCode.UNAUTHENTICATED,
                     "Invalid email or password"
                 )
 
-            payload = {"sub": str(user.id)}
+            payload = {
+                "sub": str(user.id),
+                "exp": datetime.now(timezone.utc) + timedelta(days=30)
+            }
             token = jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
             return user_pb2.LoginResponse(
