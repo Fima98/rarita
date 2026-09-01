@@ -1,9 +1,10 @@
 import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+import os
 
 security = HTTPBearer()
-SECRET_KEY = "secret-key"
+SECRET_KEY = os.getenv("JWT_SECRET_KEY")
 ALGORITHM = "HS256"
 
 

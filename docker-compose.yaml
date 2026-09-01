@@ -20,6 +20,7 @@ services:
       - PRODUCT_SERVICE_HOST=product:50051
       - USER_SERVICE_HOST=user:50052
       - INTERNAL_API_SECRET=${INTERNAL_API_SECRET}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.gateway.rule=PathPrefix(`/`)"
@@ -44,6 +45,7 @@ services:
       dockerfile: services/user/Dockerfile
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db_user:5432/${USER_DB_NAME}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
     depends_on:
       - db_user
 

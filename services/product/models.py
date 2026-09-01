@@ -17,6 +17,7 @@ class Product(SQLModel, table=True):
     description: str
     category_id: uuid.UUID = Field(foreign_key="category.id")
     attributes: dict = Field(default_factory=dict, sa_type=JSON)
+    is_active: bool = Field(default=True)
 
     category: Optional[Category] = Relationship(back_populates="products")
     variants: List["ProductVariant"] = Relationship(back_populates="product")
@@ -30,6 +31,8 @@ class ProductVariant(SQLModel, table=True):
     color_hex: str
     price: float
     stock: int
+    reserved_stock: int = Field(default=0)
+    is_active: bool = Field(default=True)
     images: List[str] = Field(default_factory=list, sa_type=JSON)
 
     product: Optional[Product] = Relationship(back_populates="variants")
