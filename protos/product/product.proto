@@ -89,8 +89,8 @@ message UpdateProductRequest {
 message UpdateProductVariantRequest {
   string variant_id = 1;
   optional double price = 2;
-  optional int32 stock = 3;
-  optional int32 reserved_stock = 4;
+  optional int32 stock_delta = 3;         
+  optional int32 reserved_stock_delta = 4;
   optional bool is_active = 5;
 }
 

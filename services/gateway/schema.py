@@ -57,6 +57,6 @@ class ProductVariantCreateSchema(BaseModel):
 
 class ProductVariantUpdateSchema(BaseModel):
     price: Optional[float] = Field(default=None, gt=0)
-    stock: Optional[int] = Field(default=None, ge=0)
-    reserved_stock: Optional[int] = Field(default=None, ge=0)
+    stock_delta: Optional[int] = Field(default=None)
+    reserved_stock_delta: Optional[int] = Field(default=None)
     is_active: Optional[bool] = None

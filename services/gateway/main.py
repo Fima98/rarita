@@ -291,10 +291,10 @@ def update_product_variant(
 
     if payload.price is not None:
         kwargs["price"] = payload.price
-    if payload.stock is not None:
-        kwargs["stock"] = payload.stock
-    if payload.reserved_stock is not None:
-        kwargs["reserved_stock"] = payload.reserved_stock
+    if payload.stock_delta is not None:
+        kwargs["stock_delta"] = payload.stock_delta
+    if payload.reserved_stock_delta is not None:
+        kwargs["reserved_stock_delta"] = payload.reserved_stock_delta
     if payload.is_active is not None:
         kwargs["is_active"] = payload.is_active
 
@@ -307,6 +307,8 @@ def update_product_variant(
     except grpc.RpcError as e:
         if e.code() == grpc.StatusCode.NOT_FOUND:
             raise HTTPException(status_code=404, detail="Variant not found")
+        if e.code() == grpc.StatusCode.FAILED_PRECONDITION:
+            raise HTTPException(status_code=400, detail=e.details())
         raise HTTPException(
             status_code=500, detail=f"gRPC service error: {e.details()}"
         )

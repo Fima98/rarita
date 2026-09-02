@@ -275,12 +275,22 @@ class ProductService(product_pb2_grpc.ProductServiceServicer):
 
             if request.HasField("price"):
                 variant.price = request.price
-            if request.HasField("stock"):
-                variant.stock = request.stock
-            if request.HasField("reserved_stock"):
-                variant.reserved_stock = request.reserved_stock
             if request.HasField("is_active"):
                 variant.is_active = request.is_active
+
+            if request.HasField("reserved_stock_delta"):
+                delta = request.reserved_stock_delta
+
+                if delta > 0 and (variant.stock - variant.reserved_stock) < delta:
+                    context.abort(
+                        grpc.StatusCode.FAILED_PRECONDITION,
+                        "Not enough available product in stock"
+                    )
+
+                variant.reserved_stock = ProductVariant.reserved_stock + delta
+
+            if request.HasField("stock_delta"):
+                variant.stock = ProductVariant.stock + request.stock_delta
 
             session.add(variant)
             session.commit()
