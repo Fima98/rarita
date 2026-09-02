@@ -60,3 +60,26 @@ class ProductVariantUpdateSchema(BaseModel):
     stock_delta: Optional[int] = Field(default=None)
     reserved_stock_delta: Optional[int] = Field(default=None)
     is_active: Optional[bool] = None
+
+
+class OrderItemSchema(BaseModel):
+    product_variant_id: str
+    quantity: int
+
+
+class CustomerInfoSchema(BaseModel):
+    name: str
+    phone: str
+    email: EmailStr
+
+
+class CreateOrderSchema(BaseModel):
+    items: list[OrderItemSchema]
+    customer: CustomerInfoSchema
+    shipping_address: str
+    user_id: str | None = None
+
+
+class ProcessPaymentSchema(BaseModel):
+    order_id: str
+    is_success: bool

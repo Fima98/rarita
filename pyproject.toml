@@ -21,6 +21,7 @@ members = [
     "services/user",
     "services/product",
     "services/gateway",
+    "services/order",
 ]
 
 [tool.uv]

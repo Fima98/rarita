@@ -1,16 +1,28 @@
-from contextlib import asynccontextmanager
 import os
+from contextlib import asynccontextmanager
+
 import grpc
-from fastapi import FastAPI, HTTPException, Request, status, Depends
+from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi.responses import JSONResponse
+from fastapi.security import APIKeyHeader
 from google.protobuf.json_format import MessageToDict
 from google.protobuf.struct_pb2 import Struct
 
-from product import product_pb2, product_pb2_grpc
-from schema import ProductCreateSchema, UserCreate, CategoryCreateSchema, LoginSchema, ProductUpdateSchema, ProductVariantUpdateSchema, ProductVariantCreateSchema
-from user import user_pb2, user_pb2_grpc
-from fastapi.responses import JSONResponse
-from fastapi.security import APIKeyHeader
 from auth import get_current_user_id
+from order import order_pb2, order_pb2_grpc
+from product import product_pb2, product_pb2_grpc
+from schema import (
+    CategoryCreateSchema,
+    CreateOrderSchema,
+    LoginSchema,
+    ProcessPaymentSchema,
+    ProductCreateSchema,
+    ProductUpdateSchema,
+    ProductVariantCreateSchema,
+    ProductVariantUpdateSchema,
+    UserCreate,
+)
+from user import user_pb2, user_pb2_grpc
 
 
 @asynccontextmanager
@@ -25,10 +37,16 @@ async def lifespan(app: FastAPI):
     user_channel = grpc.insecure_channel(user_host)
     app.state.user_stub = user_pb2_grpc.UserServiceStub(user_channel)
 
+    # ORDER
+    order_host = os.getenv("ORDER_SERVICE_HOST", "localhost:50053")
+    order_channel = grpc.insecure_channel(order_host)
+    app.state.order_stub = order_pb2_grpc.OrderServiceStub(order_channel)
+
     yield
 
     product_channel.close()
     user_channel.close()
+    order_channel.close()
 
 api_key_header = APIKeyHeader(name="X-Internal-Secret", auto_error=False)
 app = FastAPI(title="API Gateway", lifespan=lifespan,
@@ -346,6 +364,61 @@ def delete_product_variant(
     except grpc.RpcError as e:
         if e.code() == grpc.StatusCode.NOT_FOUND:
             raise HTTPException(status_code=404, detail="Variant not found")
+        raise HTTPException(
+            status_code=500, detail=f"gRPC service error: {e.details()}"
+        )
+
+
+@app.post("/orders/", status_code=status.HTTP_201_CREATED)
+def create_order(payload: CreateOrderSchema, request: Request):
+    items = [
+        order_pb2.OrderItemInput(
+            product_variant_id=item.product_variant_id,
+            quantity=item.quantity
+        )
+        for item in payload.items
+    ]
+    customer = order_pb2.CustomerInfo(
+        name=payload.customer.name,
+        phone=payload.customer.phone,
+        email=payload.customer.email
+    )
+    kwargs = {
+        "items": items,
+        "customer": customer,
+        "shipping_address": payload.shipping_address
+    }
+    if payload.user_id:
+        kwargs["user_id"] = payload.user_id
+
+    grpc_request = order_pb2.CreateOrderRequest(**kwargs)
+
+    try:
+        response = request.app.state.order_stub.CreateOrder(grpc_request)
+        return MessageToDict(response, preserving_proto_field_name=True)
+    except grpc.RpcError as e:
+        if e.code() == grpc.StatusCode.FAILED_PRECONDITION:
+            raise HTTPException(status_code=400, detail=e.details())
+        raise HTTPException(
+            status_code=500, detail=f"gRPC service error: {e.details()}"
+        )
+
+
+@app.post("/payments/webhook")
+def process_payment(payload: ProcessPaymentSchema, request: Request):
+    grpc_request = order_pb2.PaymentWebhookRequest(
+        order_id=payload.order_id,
+        is_success=payload.is_success
+    )
+
+    try:
+        response = request.app.state.order_stub.ProcessPayment(grpc_request)
+        return MessageToDict(response, preserving_proto_field_name=True)
+    except grpc.RpcError as e:
+        if e.code() == grpc.StatusCode.NOT_FOUND:
+            raise HTTPException(status_code=404, detail=e.details())
+        if e.code() == grpc.StatusCode.INVALID_ARGUMENT:
+            raise HTTPException(status_code=400, detail=e.details())
         raise HTTPException(
             status_code=500, detail=f"gRPC service error: {e.details()}"
         )

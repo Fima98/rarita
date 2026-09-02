@@ -1,0 +1,53 @@
+syntax = "proto3";
+
+package order;
+
+message OrderItemInput {
+  string product_variant_id = 1;
+  int32 quantity = 2;
+}
+
+message OrderItemResponse {
+  string product_variant_id = 1;
+  int32 quantity = 2;
+  double unit_price = 3; 
+}
+
+message CustomerInfo {
+  string name = 1;
+  string phone = 2;
+  string email = 3;
+}
+
+message CreateOrderRequest {
+  optional string user_id = 1;
+  CustomerInfo customer = 2;
+  string shipping_address = 3;
+  repeated OrderItemInput items = 4;
+}
+
+message OrderResponse {
+  string order_id = 1;
+  optional string user_id = 2;
+  string status = 3; // PENDING, PAID, CANCELLED
+  double total_price = 4;
+  CustomerInfo customer = 5;
+  string shipping_address = 6;
+  repeated OrderItemResponse items = 7; 
+  string created_at = 8; 
+  optional string payment_url = 9; 
+}
+
+message PaymentWebhookRequest {
+  string order_id = 1;
+  bool is_success = 2;
+}
+
+message PaymentWebhookResponse {
+  bool success = 1;
+}
+
+service OrderService {
+  rpc CreateOrder(CreateOrderRequest) returns (OrderResponse);
+  rpc ProcessPayment(PaymentWebhookRequest) returns (PaymentWebhookResponse);
+} 
