@@ -77,7 +77,6 @@ class CreateOrderSchema(BaseModel):
     items: list[OrderItemSchema]
     customer: CustomerInfoSchema
     shipping_address: str
-    user_id: str | None = None
 
 
 class ProcessPaymentSchema(BaseModel):

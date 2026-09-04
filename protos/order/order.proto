@@ -47,7 +47,16 @@ message PaymentWebhookResponse {
   bool success = 1;
 }
 
+message GetUserOrdersRequest {
+  string user_id = 1;
+}
+
+message GetUserOrdersResponse {
+  repeated OrderResponse orders = 1;
+}
+
 service OrderService {
   rpc CreateOrder(CreateOrderRequest) returns (OrderResponse);
   rpc ProcessPayment(PaymentWebhookRequest) returns (PaymentWebhookResponse);
+  rpc GetUserOrders(GetUserOrdersRequest) returns (GetUserOrdersResponse);
 } 

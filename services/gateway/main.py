@@ -8,7 +8,7 @@ from fastapi.security import APIKeyHeader
 from google.protobuf.json_format import MessageToDict
 from google.protobuf.struct_pb2 import Struct
 
-from auth import get_current_user_id
+from auth import get_current_user_id, get_optional_user_id
 from order import order_pb2, order_pb2_grpc
 from product import product_pb2, product_pb2_grpc
 from schema import (
@@ -370,7 +370,7 @@ def delete_product_variant(
 
 
 @app.post("/orders/", status_code=status.HTTP_201_CREATED)
-def create_order(payload: CreateOrderSchema, request: Request):
+def create_order(payload: CreateOrderSchema, request: Request, user_id: str | None = Depends(get_optional_user_id)):
     items = [
         order_pb2.OrderItemInput(
             product_variant_id=item.product_variant_id,
@@ -388,8 +388,8 @@ def create_order(payload: CreateOrderSchema, request: Request):
         "customer": customer,
         "shipping_address": payload.shipping_address
     }
-    if payload.user_id:
-        kwargs["user_id"] = payload.user_id
+    if user_id:
+        kwargs["user_id"] = user_id
 
     grpc_request = order_pb2.CreateOrderRequest(**kwargs)
 
@@ -419,6 +419,22 @@ def process_payment(payload: ProcessPaymentSchema, request: Request):
             raise HTTPException(status_code=404, detail=e.details())
         if e.code() == grpc.StatusCode.INVALID_ARGUMENT:
             raise HTTPException(status_code=400, detail=e.details())
+        raise HTTPException(
+            status_code=500, detail=f"gRPC service error: {e.details()}"
+        )
+
+
+@app.get("/orders/my")
+def get_my_orders(
+    request: Request,
+    user_id: str = Depends(get_current_user_id)
+):
+    try:
+        grpc_req = order_pb2.GetUserOrdersRequest(user_id=user_id)
+        response = request.app.state.order_stub.GetUserOrders(grpc_req)
+        result = MessageToDict(response, preserving_proto_field_name=True)
+        return {"orders": result.get("orders", [])}
+    except grpc.RpcError as e:
         raise HTTPException(
             status_code=500, detail=f"gRPC service error: {e.details()}"
         )

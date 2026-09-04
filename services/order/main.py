@@ -137,7 +137,7 @@ class OrderServicer(order_pb2_grpc.OrderServiceServicer):
             )
 
         with Session(engine, expire_on_commit=False) as session:
-            user_id = request.user_id if request.HasField("user_id") else None
+            user_id = uuid.UUID(request.user_id) if request.user_id else None
             order = Order(
                 user_id=user_id,
                 total_price=total_price,
@@ -235,6 +235,50 @@ class OrderServicer(order_pb2_grpc.OrderServiceServicer):
             session.commit()
 
         return order_pb2.PaymentWebhookResponse(success=True)
+
+    async def GetUserOrders(self, request, context):
+        with Session(engine, expire_on_commit=False) as session:
+            user_uuid = uuid.UUID(request.user_id) if request.user_id else None
+            orders = session.exec(select(Order).where(
+                Order.user_id == user_uuid)).all()
+
+            response_orders = []
+
+            for order in orders:
+                items = session.exec(
+                    select(OrderItem).where(OrderItem.order_id == order.id)
+                ).all()
+
+                response_items = [
+                    order_pb2.OrderItemResponse(
+                        product_variant_id=item.product_variant_id,
+                        quantity=item.quantity,
+                        unit_price=item.price
+                    )
+                    for item in items
+                ]
+
+                customer_info = order_pb2.CustomerInfo(
+                    name=order.customer_name,
+                    phone=order.customer_phone,
+                    email=order.customer_email
+                )
+
+                response_orders.append(
+                    order_pb2.OrderResponse(
+                        order_id=str(order.id),
+                        user_id=order.user_id if order.user_id else None,
+                        status=order.status,
+                        total_price=order.total_price,
+                        customer=customer_info,
+                        shipping_address=order.shipping_address,
+                        items=response_items,
+                        created_at=order.created_at.isoformat(),
+                        payment_url=f"https://pay.example.com/checkout/{order.id}" if order.status == "PENDING" else None
+                    )
+                )
+
+            return order_pb2.GetUserOrdersResponse(orders=response_orders)
 
 
 async def serve():
