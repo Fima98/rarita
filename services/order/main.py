@@ -54,39 +54,83 @@ product_client = ProductServiceClient(PRODUCT_SERVICE_URL)
 
 
 # ==========================================
-# RabbitMQ Consumer (Timeout 15 min)
+# RabbitMQ Consumers
 # ==========================================
-async def handle_order_timeout(message: aio_pika.IncomingMessage):
+async def handle_dead_letter(message: aio_pika.IncomingMessage):
     async with message.process():
+        print(
+            f"[DLQ] Повідомлення остаточно не оброблено: {message.body.decode()}")
+
+
+async def handle_order_timeout(message: aio_pika.IncomingMessage):
+    headers = message.headers or {}
+    deaths = headers.get("x-death", [])
+    retries = sum(d["count"] for d in deaths) if deaths else 0
+
+    if retries >= MAX_RETRIES:
+        print(
+            f"Order {message.body} failed after {MAX_RETRIES} retries. Sent to DLQ.")
+        await message.reject(requeue=False)
+        return
+    try:
+
         data = json.loads(message.body.decode())
         order_uuid = uuid.UUID(data["order_id"])
 
         with Session(engine, expire_on_commit=False) as session:
             order = session.get(Order, order_uuid)
-            if order and order.status == "PENDING":
-                order.status = "CANCELLED"
-                session.add(order)
-                session.commit()
+            if not order or order.status != "PENDING":
+                return await message.ack()
 
-                items = session.exec(
-                    select(OrderItem).where(OrderItem.order_id == order_uuid)
-                ).all()
+            items = session.exec(
+                select(OrderItem).where(OrderItem.order_id == order_uuid)
+            ).all()
 
-                for item in items:
-                    await product_client.update_product_variant(
-                        item.product_variant_id,
-                        reserved_stock_delta=-item.quantity
-                    )
+            for item in items:
+                await product_client.update_product_variant(
+                    item.product_variant_id,
+                    reserved_stock_delta=-item.quantity
+                )
+
+            order.status = "CANCELLED"
+            session.add(order)
+            session.commit()
+        await message.ack()
+
+    except Exception as e:
+        print(f"[Error] Processing error: {e}. Redirecting to retry queue...")
+        await message.channel.default_exchange.publish(
+            aio_pika.Message(
+                body=message.body,
+                headers=message.headers,
+                delivery_mode=message.delivery_mode,
+            ),
+            routing_key="order_retry_queue",
+        )
+        await message.ack()
 
 
 EXCHANGES_CONFIG = {
-    "order_events": aio_pika.ExchangeType.TOPIC
+    "order_events": aio_pika.ExchangeType.TOPIC,
+    "order_dlx": aio_pika.ExchangeType.TOPIC,
 }
 
 EVENT_HANDLERS = [
-    ("order_events", "order.timeout", "order_timeout_queue", handle_order_timeout),
+    ("order_events", "order.timeout", "order_timeout_queue", handle_order_timeout, {
+        "x-dead-letter-exchange": "order_dlx",
+        "x-dead-letter-routing-key": "order.dlq",
+    }),
+    (
+        "order_dlx",
+        "order.dlq",
+        "order_dead_letter_queue",
+        handle_dead_letter,
+        None,
+    ),
     # EXCHANGE NAME - ROUTING KEY - QUEUE NAME - HANDLER
 ]
+
+MAX_RETRIES = 3  # for senging message to dead letter queue.
 
 
 async def start_rabbitmq():
@@ -106,9 +150,16 @@ async def start_rabbitmq():
     }
     await channel.declare_queue("order_ttl_queue", durable=True, arguments=args)
 
-    for ex_name, routing_key, queue_name, handler in EVENT_HANDLERS:
+    args_retry = {
+        "x-dead-letter-exchange": "order_events",
+        "x-dead-letter-routing-key": "order.timeout",
+        "x-message-ttl": 60000,  # 1 minute
+    }
+    await channel.declare_queue("order_retry_queue", durable=True, arguments=args_retry)
+
+    for ex_name, routing_key, queue_name, handler, queue_args in EVENT_HANDLERS:
         exchange = exchanges[ex_name]
-        queue = await channel.declare_queue(queue_name, durable=True)
+        queue = await channel.declare_queue(queue_name, durable=True, arguments=queue_args)
         await queue.bind(exchange, routing_key=routing_key)
         await queue.consume(handler)
 
