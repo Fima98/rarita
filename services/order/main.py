@@ -79,11 +79,25 @@ async def handle_order_timeout(message: aio_pika.IncomingMessage):
                     )
 
 
+EXCHANGES_CONFIG = {
+    "order_events": aio_pika.ExchangeType.TOPIC
+}
+
+EVENT_HANDLERS = [
+    ("order_events", "order.timeout", "order_timeout_queue", handle_order_timeout),
+    # EXCHANGE NAME - ROUTING KEY - QUEUE NAME - HANDLER
+]
+
+
 async def start_rabbitmq():
     connection = await aio_pika.connect_robust(RABBITMQ_URL)
     channel = await connection.channel()
 
-    exchange = await channel.declare_exchange("order_events", aio_pika.ExchangeType.DIRECT)
+    await channel.set_qos(prefetch_count=10)
+
+    exchanges = {}
+    for name, ex_type in EXCHANGES_CONFIG.items():
+        exchanges[name] = await channel.declare_exchange(name, ex_type)
 
     args = {
         "x-dead-letter-exchange": "order_events",
@@ -92,20 +106,23 @@ async def start_rabbitmq():
     }
     await channel.declare_queue("order_ttl_queue", durable=True, arguments=args)
 
-    timeout_queue = await channel.declare_queue("order_timeout_queue", durable=True)
-    await timeout_queue.bind(exchange, routing_key="order.timeout")
-    await timeout_queue.consume(handle_order_timeout)
+    for ex_name, routing_key, queue_name, handler in EVENT_HANDLERS:
+        exchange = exchanges[ex_name]
+        queue = await channel.declare_queue(queue_name, durable=True)
+        await queue.bind(exchange, routing_key=routing_key)
+        await queue.consume(handler)
 
-    return channel, exchange
-
+    return connection, channel, exchanges
 
 # ==========================================
 # Order Service Servicer
 # ==========================================
+
+
 class OrderServicer(order_pb2_grpc.OrderServiceServicer):
-    def __init__(self, rabbit_channel, rabbit_exchange):
+    def __init__(self, rabbit_channel, exchanges):
         self.rabbit_channel = rabbit_channel
-        self.rabbit_exchange = rabbit_exchange
+        self.exchanges = exchanges
 
     async def CreateOrder(self, request, context):
         reserved_items = []
@@ -182,17 +199,20 @@ class OrderServicer(order_pb2_grpc.OrderServiceServicer):
             email=order.customer_email
         )
 
-        return order_pb2.OrderResponse(
-            order_id=str(order.id),
-            user_id=order.user_id if order.user_id else None,
-            status=order.status,
-            total_price=order.total_price,
-            customer=customer_info,
-            shipping_address=order.shipping_address,
-            items=response_items,
-            created_at=order.created_at.isoformat(),
-            payment_url=f"https://pay.example.com/checkout/{order.id}"
-        )
+        response_kwargs = {
+            "order_id": str(order.id),
+            "status": order.status,
+            "total_price": order.total_price,
+            "customer": customer_info,
+            "shipping_address": order.shipping_address,
+            "items": response_items,
+            "created_at": order.created_at.isoformat(),
+            "payment_url": f"https://pay.example.com/checkout/{order.id}",
+        }
+        if order.user_id:
+            response_kwargs["user_id"] = str(order.user_id)
+
+        return order_pb2.OrderResponse(**response_kwargs)
 
     async def ProcessPayment(self, request, context):
         try:
@@ -223,6 +243,7 @@ class OrderServicer(order_pb2_grpc.OrderServiceServicer):
                         reserved_stock_delta=-item.quantity,
                         stock_delta=-item.quantity
                     )
+                routing_key = "order.paid"
             else:
                 order.status = "CANCELLED"
                 for item in items:
@@ -230,10 +251,16 @@ class OrderServicer(order_pb2_grpc.OrderServiceServicer):
                         variant_id=item.product_variant_id,
                         reserved_stock_delta=-item.quantity
                     )
+                routing_key = "order.cancelled"
 
             session.add(order)
             session.commit()
 
+        await self.exchanges["order_events"].publish(
+            aio_pika.Message(body=json.dumps(
+                {"order_id": str(order.id)}).encode()),
+            routing_key=routing_key
+        )
         return order_pb2.PaymentWebhookResponse(success=True)
 
     async def GetUserOrders(self, request, context):
@@ -264,18 +291,23 @@ class OrderServicer(order_pb2_grpc.OrderServiceServicer):
                     email=order.customer_email
                 )
 
+                response_kwargs = {
+                    "order_id": str(order.id),
+                    "status": order.status,
+                    "total_price": order.total_price,
+                    "customer": customer_info,
+                    "shipping_address": order.shipping_address,
+                    "items": response_items,
+                    "created_at": order.created_at.isoformat(),
+                }
+                if order.user_id:
+                    response_kwargs["user_id"] = str(order.user_id)
+                if order.status == "PENDING":
+                    response_kwargs[
+                        "payment_url"] = f"https://pay.example.com/checkout/{order.id}"
+
                 response_orders.append(
-                    order_pb2.OrderResponse(
-                        order_id=str(order.id),
-                        user_id=order.user_id if order.user_id else None,
-                        status=order.status,
-                        total_price=order.total_price,
-                        customer=customer_info,
-                        shipping_address=order.shipping_address,
-                        items=response_items,
-                        created_at=order.created_at.isoformat(),
-                        payment_url=f"https://pay.example.com/checkout/{order.id}" if order.status == "PENDING" else None
-                    )
+                    order_pb2.OrderResponse(**response_kwargs)
                 )
 
             return order_pb2.GetUserOrdersResponse(orders=response_orders)
@@ -283,11 +315,11 @@ class OrderServicer(order_pb2_grpc.OrderServiceServicer):
 
 async def serve():
     product_client.connect()
-    rabbit_channel, rabbit_exchange = await start_rabbitmq()
+    connection, rabbit_channel, exchanges = await start_rabbitmq()
 
     server = grpc.aio.server()
     order_pb2_grpc.add_OrderServiceServicer_to_server(
-        OrderServicer(rabbit_channel, rabbit_exchange), server
+        OrderServicer(rabbit_channel, exchanges), server
     )
     server.add_insecure_port(f"[::]:{PORT}")
 
@@ -298,6 +330,7 @@ async def serve():
         await server.wait_for_termination()
     finally:
         await product_client.close()
+        await connection.close()
 
 
 if __name__ == "__main__":
